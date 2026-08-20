@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Cursor Creature</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: linear-gradient(circle at 50% 40%, #1b1440 0%, #0a0818 60%, #050409 100%);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .hint {
+            position: fixed;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.35);
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            letter-spacing: 1px;
+            pointer-events: none;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="c"></canvas>
+    <div class="hint">move your cursor — the creature will follow</div>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ---- Mouse / touch tracking ----
+        const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        window.addEventListener('mousemove', e => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+        window.addEventListener('touchmove', e => {
+            if (e.touches.length > 0) {
+                mouse.x = e.touches[0].clientX;
+                mouse.y = e.touches[0].clientY;
+            }
+        }, { passive: true });
+
+        // ---- Chain (spine) setup ----
+        const SEGMENT_COUNT = 42;
+        const SEGMENT_LENGTH = 11;
+        const spine = [];
+        for (let i = 0; i < SEGMENT_COUNT; i++) {
+            spine.push({ x: mouse.x, y: mouse.y, angle: 0 });
+        }
+
+        // Legs sprout from certain spine indices, in pairs (left/right)
+        const LEG_INDICES = [4, 8, 12, 17, 22, 27];
+        const legs = LEG_INDICES.map(i => ({
+            index: i,
+            // each leg pair: two feet, left & right, with their own settle position
+            left: { x: 0, y: 0, targetX: 0, targetY: 0, moving: false },
+            right: { x: 0, y: 0, targetX: 0, targetY: 0, moving: false }
+        }));
+
+        function angleLerp(a, b, t) {
+            let diff = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+            return a + diff * t;
+        }
+
+        function updateSpine() {
+            // Head eases toward the mouse
+            const head = spine[0];
+            const dx = mouse.x - head.x;
+            const dy = mouse.y - head.y;
+            head.x += dx * 0.22;
+            head.y += dy * 0.22;
+            const targetAngle = Math.atan2(dy, dx);
+            head.angle = angleLerp(head.angle, targetAngle, 0.35);
+
+            // Each following segment is pulled to a fixed distance behind the previous one
+            for (let i = 1; i < spine.length; i++) {
+                const prev = spine[i - 1];
+                const cur = spine[i];
+                const a = Math.atan2(cur.y - prev.y, cur.x - prev.x);
+                cur.angle = a;
+                cur.x = prev.x + Math.cos(a) * SEGMENT_LENGTH;
+                cur.y = prev.y + Math.sin(a) * SEGMENT_LENGTH;
+            }
+        }
+
+        function updateLegs() {
+            const stepDistance = 26; // how far a foot can drift before it "steps"
+            const legReach = 30;     // how far a foot sits from the spine
+
+            legs.forEach(leg => {
+                const seg = spine[leg.index];
+                const perp = seg.angle + Math.PI / 2;
+
+                [['left', -1], ['right', 1]].forEach(([side, sign]) => {
+                    const foot = leg[side];
+                    const idealX = seg.x + Math.cos(perp) * legReach * sign + Math.cos(seg.angle) * 10;
+                    const idealY = seg.y + Math.sin(perp) * legReach * sign + Math.sin(seg.angle) * 10;
+
+                    const distToIdeal = Math.hypot(idealX - foot.targetX, idealY - foot.targetY);
+                    if (distToIdeal > stepDistance) {
+                        // plant a new target a little ahead, alternating gait via time offset
+                        foot.targetX = idealX + Math.cos(seg.angle) * 14;
+                        foot.targetY = idealY + Math.sin(seg.angle) * 14;
+                    }
+                    // ease the actual foot position toward its target (the "step")
+                    foot.x += (foot.targetX - foot.x) * 0.35;
+                    foot.y += (foot.targetY - foot.y) * 0.35;
+                });
+            });
+        }
+
+        // Initialize leg targets so they don't all snap in from (0,0) on first frame
+        function initLegs() {
+            legs.forEach(leg => {
+                const seg = spine[leg.index];
+                const perp = seg.angle + Math.PI / 2;
+                [['left', -1], ['right', 1]].forEach(([side, sign]) => {
+                    const foot = leg[side];
+                    foot.x = foot.targetX = seg.x + Math.cos(perp) * 30 * sign;
+                    foot.y = foot.targetY = seg.y + Math.sin(perp) * 30 * sign;
+                });
+            });
+        }
+        initLegs();
+
+        function drawSpine() {
+            // Ribcage effect: perpendicular tick marks along the spine + connecting outline
+            ctx.strokeStyle = 'rgba(225, 230, 255, 0.95)';
+            ctx.lineWidth = 1.4;
+            ctx.shadowColor = 'rgba(150, 180, 255, 0.55)';
+            ctx.shadowBlur = 6;
+
+            // central spine line
+            ctx.beginPath();
+            ctx.moveTo(spine[0].x, spine[0].y);
+            for (let i = 1; i < spine.length; i++) ctx.lineTo(spine[i].x, spine[i].y);
+            ctx.stroke();
+
+            // ribs
+            for (let i = 1; i < spine.length - 1; i++) {
+                const seg = spine[i];
+                const width = 9 * (1 - i / spine.length) + 2; // tapers toward the tail
+                const perp = seg.angle + Math.PI / 2;
+                const rx = Math.cos(perp) * width;
+                const ry = Math.sin(perp) * width;
+                ctx.beginPath();
+                ctx.moveTo(seg.x - rx, seg.y - ry);
+                ctx.lineTo(seg.x + rx, seg.y + ry);
+                ctx.stroke();
+            }
+        }
+
+        function drawLegs() {
+            ctx.lineWidth = 1.2;
+            legs.forEach(leg => {
+                const seg = spine[leg.index];
+                ['left', 'right'].forEach(side => {
+                    const foot = leg[side];
+                    // upper leg segment (elbow at midpoint, slightly bent)
+                    const midX = (seg.x + foot.x) / 2 + (foot.y - seg.y) * 0.12;
+                    const midY = (seg.y + foot.y) / 2 - (foot.x - seg.x) * 0.12;
+                    ctx.beginPath();
+                    ctx.moveTo(seg.x, seg.y);
+                    ctx.lineTo(midX, midY);
+                    ctx.lineTo(foot.x, foot.y);
+                    ctx.stroke();
+
+                    // little foot/claw marks
+                    const a = Math.atan2(foot.y - midY, foot.x - midX);
+                    for (const off of [-0.5, 0.5]) {
+                        ctx.beginPath();
+                        ctx.moveTo(foot.x, foot.y);
+                        ctx.lineTo(foot.x + Math.cos(a + off) * 6, foot.y + Math.sin(a + off) * 6);
+                        ctx.stroke();
+                    }
+                });
+            });
+        }
+
+        function drawHead() {
+            const head = spine[0];
+            ctx.beginPath();
+            ctx.arc(head.x, head.y, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            // small antennae
+            ctx.beginPath();
+            ctx.moveTo(head.x, head.y);
+            ctx.lineTo(head.x + Math.cos(head.angle - 0.6) * 14, head.y + Math.sin(head.angle - 0.6) * 14);
+            ctx.moveTo(head.x, head.y);
+            ctx.lineTo(head.x + Math.cos(head.angle + 0.6) * 14, head.y + Math.sin(head.angle + 0.6) * 14);
+            ctx.stroke();
+        }
+
+        function loop() {
+            // fading trail effect
+            ctx.fillStyle = 'rgba(5, 4, 9, 0.28)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            updateSpine();
+            updateLegs();
+
+            drawLegs();
+            drawSpine();
+            drawHead();
+
+            ctx.shadowBlur = 0;
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+
+</html>
