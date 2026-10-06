@@ -47,8 +47,6 @@
         }
         resize();
         window.addEventListener('resize', resize);
-
-        // ---- Mouse / touch tracking ----
         const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
         window.addEventListener('mousemove', e => {
             mouse.x = e.clientX;
@@ -60,20 +58,15 @@
                 mouse.y = e.touches[0].clientY;
             }
         }, { passive: true });
-
-        // ---- Chain (spine) setup ----
         const SEGMENT_COUNT = 42;
         const SEGMENT_LENGTH = 11;
         const spine = [];
         for (let i = 0; i < SEGMENT_COUNT; i++) {
             spine.push({ x: mouse.x, y: mouse.y, angle: 0 });
         }
-
-        // Legs sprout from certain spine indices, in pairs (left/right)
         const LEG_INDICES = [4, 8, 12, 17, 22, 27];
         const legs = LEG_INDICES.map(i => ({
             index: i,
-            // each leg pair: two feet, left & right, with their own settle position
             left: { x: 0, y: 0, targetX: 0, targetY: 0, moving: false },
             right: { x: 0, y: 0, targetX: 0, targetY: 0, moving: false }
         }));
@@ -84,7 +77,6 @@
         }
 
         function updateSpine() {
-            // Head eases toward the mouse
             const head = spine[0];
             const dx = mouse.x - head.x;
             const dy = mouse.y - head.y;
@@ -93,7 +85,6 @@
             const targetAngle = Math.atan2(dy, dx);
             head.angle = angleLerp(head.angle, targetAngle, 0.35);
 
-            // Each following segment is pulled to a fixed distance behind the previous one
             for (let i = 1; i < spine.length; i++) {
                 const prev = spine[i - 1];
                 const cur = spine[i];
@@ -105,8 +96,8 @@
         }
 
         function updateLegs() {
-            const stepDistance = 26; // how far a foot can drift before it "steps"
-            const legReach = 30;     // how far a foot sits from the spine
+            const stepDistance = 26;
+            const legReach = 30; 
 
             legs.forEach(leg => {
                 const seg = spine[leg.index];
@@ -119,18 +110,14 @@
 
                     const distToIdeal = Math.hypot(idealX - foot.targetX, idealY - foot.targetY);
                     if (distToIdeal > stepDistance) {
-                        // plant a new target a little ahead, alternating gait via time offset
                         foot.targetX = idealX + Math.cos(seg.angle) * 14;
                         foot.targetY = idealY + Math.sin(seg.angle) * 14;
                     }
-                    // ease the actual foot position toward its target (the "step")
                     foot.x += (foot.targetX - foot.x) * 0.35;
                     foot.y += (foot.targetY - foot.y) * 0.35;
                 });
             });
         }
-
-        // Initialize leg targets so they don't all snap in from (0,0) on first frame
         function initLegs() {
             legs.forEach(leg => {
                 const seg = spine[leg.index];
@@ -145,7 +132,6 @@
         initLegs();
 
         function drawSpine() {
-            // Ribcage effect: perpendicular tick marks along the spine + connecting outline
             ctx.strokeStyle = 'rgba(225, 230, 255, 0.95)';
             ctx.lineWidth = 1.4;
             ctx.shadowColor = 'rgba(150, 180, 255, 0.55)';
@@ -157,10 +143,9 @@
             for (let i = 1; i < spine.length; i++) ctx.lineTo(spine[i].x, spine[i].y);
             ctx.stroke();
 
-            // ribs
             for (let i = 1; i < spine.length - 1; i++) {
                 const seg = spine[i];
-                const width = 9 * (1 - i / spine.length) + 2; // tapers toward the tail
+                const width = 9 * (1 - i / spine.length) + 2; 
                 const perp = seg.angle + Math.PI / 2;
                 const rx = Math.cos(perp) * width;
                 const ry = Math.sin(perp) * width;
@@ -177,7 +162,6 @@
                 const seg = spine[leg.index];
                 ['left', 'right'].forEach(side => {
                     const foot = leg[side];
-                    // upper leg segment (elbow at midpoint, slightly bent)
                     const midX = (seg.x + foot.x) / 2 + (foot.y - seg.y) * 0.12;
                     const midY = (seg.y + foot.y) / 2 - (foot.x - seg.x) * 0.12;
                     ctx.beginPath();
@@ -186,7 +170,6 @@
                     ctx.lineTo(foot.x, foot.y);
                     ctx.stroke();
 
-                    // little foot/claw marks
                     const a = Math.atan2(foot.y - midY, foot.x - midX);
                     for (const off of [-0.5, 0.5]) {
                         ctx.beginPath();
@@ -213,7 +196,6 @@
         }
 
         function loop() {
-            // fading trail effect
             ctx.fillStyle = 'rgba(5, 4, 9, 0.28)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
